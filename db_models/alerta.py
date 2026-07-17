@@ -5,7 +5,7 @@ from typing import Optional
 class Alerta(BaseModel):
     id: str = Field(alias="_id", default=None)
     agencia_id: str
-    tipo_alerta: str # Ej: "Temperatura Fuera de Rango", "Muestra Vencida"
+    tipo_alerta: str # Ej: "Precio Anomalo", "Contrato Vencido"
     mensaje: str
     entidad_referencia_id: str # Puede ser el id de una muestra o un analisis
     resuelta: bool = False
