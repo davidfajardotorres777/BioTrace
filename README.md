@@ -1,50 +1,31 @@
-# BioTrace
-### Sistema de Trazabilidad de Muestras Biológicas y Datos Genómicos
+# BioTrace V2 Enterprise
+### Sistema de Trazabilidad Genómica con Arquitectura Multi-tenant y Object Storage
 
 Proyecto Integrador — Bases de Datos II · 2026
 
 ---
 
-## El problema
+## Ecosistema de Bases de Datos
+Siguiendo los mejores estándares, BioTrace no se limita a una sola tecnología. Integra un ecosistema:
+1. **MongoDB**: Para datos estructurados y operacionales (Pacientes, Muestras, Análisis, Alertas).
+2. **MinIO (S3 Compatible)**: Como Object Storage para almacenar de forma eficiente los enormes archivos de secuenciación genómica (`.fastq`, `.bam`) generados por los análisis.
 
-En laboratorios de investigación genética y hospitales, el rastreo del ciclo de vida de una muestra biológica (desde su extracción al paciente, almacenamiento, procesamiento y posterior secuenciación) suele estar fragmentado en múltiples planillas de cálculo. Esta dispersión genera inconsistencias, pérdida de datos críticos para la trazabilidad y dificulta las consultas transversales (ej. "¿qué análisis genómicos se realizaron sobre muestras de pacientes con diabetes tipo 2 en 2025?").
-
-BioTrace resuelve este problema consolidando los datos operativos. Es un módulo de persistencia (DAO) que almacena de forma unificada e indexada los Pacientes, Muestras y Análisis Genómicos en MongoDB. Este enfoque orientado a documentos permite flexibilidad en la estructuración de la metadata genómica sin perder la capacidad de consulta.
+## Características Avanzadas
+- **Multi-tenancy (Aislamiento por Clínica)**: El `BioTraceDAO` requiere inyectar un `clinica_id` en su inicialización. Todas las consultas y escrituras se filtran automáticamente en MongoDB para garantizar que una Clínica no pueda ver los datos de otra.
+- **Alertas Basadas en Reglas**: El DAO implementa reglas de negocio. Por ejemplo, si se registra una muestra con una temperatura de almacenamiento superior a 4°C, se dispara un evento automático hacia la colección de `Alertas`.
+- **Integración S3**: El `StorageDAO` maneja la conexión con MinIO para asegurar la trazabilidad del archivo físico atado al metadato de MongoDB.
 
 ---
 
 ## Arquitectura
 
-El proyecto implementa el patrón **Data Access Object (DAO)** para encapsular la interacción con MongoDB.
 ```
-Notebook/App → BioTraceDAO → MongoDB (Docker)
+Notebook/App → BioTraceDAO (MongoDB)
+             → StorageDAO (MinIO)
 ```
 
-**Colecciones de MongoDB:**
-- **pacientes**: Datos demográficos y clínicos.
-- **muestras**: Información de la toma de muestras (fecha, tipo de tejido, origen).
-- **analisis**: Resultados de los procesos (ej. Secuenciación, PCR) y métricas de calidad (Q-score, cobertura).
-
----
-
-## Estructura del proyecto
-
-```
-BioTrace/
-├── db_models/
-│   ├── __init__.py
-│   ├── paciente.py      # Entidad Paciente
-│   ├── muestra.py       # Entidad Muestra biológica
-│   └── analisis.py      # Entidad Análisis Genómico/Clínico
-├── dao.py               # BioTraceDAO — interfaz principal con MongoDB
-├── config_vars.py       # Lectura de variables de entorno (dotenv)
-├── setup_db.py          # Configuración inicial e índices de MongoDB
-├── seed.py              # Poblador de datos de prueba (faker)
-├── demo.ipynb           # Notebook de demostración y análisis con Pandas
-├── docker-compose.yml   # Contenedor MongoDB
-├── requirements.txt     # Dependencias de Python
-└── .env.example         # Ejemplo de configuración
-```
+**Colecciones Operacionales:** `pacientes`, `muestras`, `analisis`, `alertas` (Aisladas por `clinica_id`).
+**Colecciones Globales:** `clinicas`.
 
 ---
 
@@ -55,44 +36,32 @@ BioTrace/
 - Docker Desktop
 - Git
 
-### 1. Entorno y Dependencias
+### 1. Entorno
 ```bash
 python -m venv venv
-```
-Activar en Windows: `venv\Scripts\activate`
-Activar en Linux/Mac: `source venv/bin/activate`
-
-```bash
-pip install --upgrade pip
+# Activar según tu SO (venv\Scripts\activate o source venv/bin/activate)
 pip install -r requirements.txt
 ```
 
-### 2. Variables de entorno
-Crear un archivo `.env` en la raíz (basado en `.env.example`):
-```
-MONGO_URI=mongodb://localhost:27017
-DB_NAME=biotrace_db
-```
+### 2. Variables
+Copia `.env.example` a `.env`.
 
-### 3. Levantar la base de datos
+### 3. Levantar Infraestructura
+Esto levantará MongoDB y MinIO.
 ```bash
 docker compose up -d
 ```
-Verifica con `docker ps` que `biotrace-mongo` esté corriendo.
+Puedes acceder a la consola de MinIO en http://localhost:9001 (user: admin, pass: password).
 
-### 4. Inicializar y Poblar la BD
-Crea las colecciones y los índices de rendimiento:
+### 4. Setup y Seed
 ```bash
 python setup_db.py
-```
-
-Inserta datos de prueba sintéticos:
-```bash
 python seed.py
 ```
+El seed ahora genera múltiples clínicas, puebla MinIO con archivos simulados y genera alertas de temperatura controladas.
 
-### 5. Explorar los datos
-Abre Jupyter Notebook para ver cómo opera el DAO y el análisis en Pandas:
+### 5. Jupyter Notebook
 ```bash
 jupyter notebook demo.ipynb
 ```
+El notebook te guiará por todas estas características avanzadas en acción.
