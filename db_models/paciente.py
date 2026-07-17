@@ -10,6 +10,7 @@ class Paciente(BaseModel):
     apellido: str
     fecha_nacimiento: datetime
     genero: str
+    ubicacion: Optional[dict] = None # GeoJSON Point: {"type": "Point", "coordinates": [lon, lat]}
     historial_medico: Optional[str] = None
     fecha_registro: datetime = Field(default_factory=datetime.utcnow)
 
