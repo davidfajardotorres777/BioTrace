@@ -5,14 +5,15 @@ from db_models.paciente import Paciente
 from db_models.muestra import Muestra
 from db_models.analisis import Analisis
 from db_models.clinica import Clinica
-from dao import AdminDAO, BioTraceDAO, StorageDAO
+from dao import AdminDAO, BioTraceDAO, StorageDAO, VectorDAO
 
 fake = Faker('es_AR')
 
 def generar_datos_prueba():
-    print("Conectando y limpiando base de datos y Storage...")
+    print("Conectando y limpiando base de datos, Storage y VectorDB...")
     admin_dao = AdminDAO()
     storage = StorageDAO()
+    vector_dao = VectorDAO()
     
     admin_dao.col_clinicas.delete_many({})
     admin_dao.db['pacientes'].delete_many({})
@@ -20,13 +21,21 @@ def generar_datos_prueba():
     admin_dao.db['analisis'].delete_many({})
     admin_dao.db['alertas'].delete_many({})
     
-    # Crear Clínicas
+    # Crear Clínicas con ubicacion (GeoJSON Point)
     clinicas_ids = []
-    for nombre in ["Genómica Central", "Hospital Italiano BioLab"]:
-        c_id = admin_dao.insertar_clinica(Clinica(nombre=nombre, direccion=fake.address()))
+    # Coordenadas alrededor de Chilecito / La Rioja
+    for nombre, lon, lat in [("Genómica Central", -67.49, -29.16), ("Hospital Italiano BioLab", -67.50, -29.17)]:
+        clinica = Clinica(
+            nombre=nombre, 
+            direccion=fake.address(),
+            ubicacion={"type": "Point", "coordinates": [lon, lat]}
+        )
+        c_id = admin_dao.insertar_clinica(clinica)
         clinicas_ids.append(c_id)
         
     print(f"Creadas {len(clinicas_ids)} clínicas.")
+    
+    sintomas = ["fiebre alta", "fatiga crónica", "dolor articular", "pérdida de peso", "tos persistente", "antecedentes familiares de cáncer", "migrañas severas", "anemia inexplicable"]
     
     # Para cada clínica generar datos
     for c_id in clinicas_ids:
@@ -42,17 +51,30 @@ def generar_datos_prueba():
         tipos_analisis = ["Secuenciación WGS", "PCR Multiplex", "Panel Genético Oncológico"]
         
         for _ in range(num_pacientes):
-            # Crear Paciente
+            # Crear Paciente con ubicacion aleatoria cercana a la clinica
+            lon = -67.49 + random.uniform(-0.05, 0.05)
+            lat = -29.16 + random.uniform(-0.05, 0.05)
             fecha_nac = fake.date_of_birth(minimum_age=18, maximum_age=90)
+            
+            # Generar un historial médico rico en texto para ChromaDB
+            historial = f"Paciente presenta {random.choice(sintomas)} desde hace {random.randint(1,6)} meses. " \
+                        f"Además, reporta {random.choice(sintomas)} intermitente. " \
+                        f"Observaciones adicionales: {fake.sentence()}"
+                        
             paciente = Paciente(
                 clinica_id=c_id,
                 dni=str(fake.random_int(min=10000000, max=99999999)),
                 nombre=fake.first_name(),
                 apellido=fake.last_name(),
                 fecha_nacimiento=datetime(fecha_nac.year, fecha_nac.month, fecha_nac.day),
-                genero=random.choice(["M", "F", "X"])
+                genero=random.choice(["M", "F", "X"]),
+                ubicacion={"type": "Point", "coordinates": [lon, lat]},
+                historial_medico=historial
             )
             p_id = dao.insertar_paciente(paciente)
+            
+            # Indexar en ChromaDB (Vector Search)
+            vector_dao.indexar_historial(p_id, historial)
             
             # Crear muestras
             for _ in range(random.randint(1, 3)):
@@ -94,7 +116,7 @@ def generar_datos_prueba():
                 dao.insertar_analisis(analisis)
 
     admin_dao.cerrar_conexion()
-    print("Datos (MongoDB) y Archivos Físicos (MinIO) generados exitosamente.")
+    print("Datos (MongoDB), Archivos Físicos (MinIO) e Índices Vectoriales (ChromaDB) generados exitosamente.")
 
 if __name__ == "__main__":
     generar_datos_prueba()
