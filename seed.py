@@ -1,11 +1,11 @@
 from faker import Faker
 import random
 from datetime import datetime, timedelta
-from db_models.paciente import Paciente
-from db_models.muestra import Muestra
-from db_models.analisis import Analisis
-from db_models.clinica import Clinica
-from dao import AdminDAO, BioTraceDAO, StorageDAO, VectorDAO
+from db_models.propiedad import Propiedad
+from db_models.cliente import Cliente
+from db_models.contrato import Contrato
+from db_models.agencia import Agencia
+from dao import AdminDAO, InmoCoreDAO, StorageDAO, VectorDAO
 
 fake = Faker('es_AR')
 
@@ -15,108 +15,102 @@ def generar_datos_prueba():
     storage = StorageDAO()
     vector_dao = VectorDAO()
     
-    admin_dao.col_clinicas.delete_many({})
-    admin_dao.db['pacientes'].delete_many({})
-    admin_dao.db['muestras'].delete_many({})
-    admin_dao.db['analisis'].delete_many({})
+    # Limpieza
+    admin_dao.col_agencias.delete_many({})
+    admin_dao.db['propiedades'].delete_many({})
+    admin_dao.db['clientes'].delete_many({})
+    admin_dao.db['contratos'].delete_many({})
     admin_dao.db['alertas'].delete_many({})
     
-    # Crear Clínicas con ubicacion (GeoJSON Point)
-    clinicas_ids = []
-    # Coordenadas alrededor de Chilecito / La Rioja
-    for nombre, lon, lat in [("Genómica Central", -67.49, -29.16), ("Hospital Italiano BioLab", -67.50, -29.17)]:
-        clinica = Clinica(
+    agencias_ids = []
+    # Coordenadas alrededor de Palermo, Buenos Aires
+    for nombre, lon, lat in [("Inmobiliaria Palermo Soho", -58.42, -34.58), ("Boutique Real Estate", -58.43, -34.59)]:
+        agencia = Agencia(
             nombre=nombre, 
             direccion=fake.address(),
             ubicacion={"type": "Point", "coordinates": [lon, lat]}
         )
-        c_id = admin_dao.insertar_clinica(clinica)
-        clinicas_ids.append(c_id)
+        a_id = admin_dao.insertar_agencia(agencia)
+        agencias_ids.append(a_id)
         
-    print(f"Creadas {len(clinicas_ids)} clínicas.")
+    print(f"Creadas {len(agencias_ids)} agencias.")
     
-    sintomas = ["fiebre alta", "fatiga crónica", "dolor articular", "pérdida de peso", "tos persistente", "antecedentes familiares de cáncer", "migrañas severas", "anemia inexplicable"]
-    
-    # Para cada clínica generar datos
-    for c_id in clinicas_ids:
-        dao = BioTraceDAO(clinica_id=c_id)
-        print(f"Generando datos para clínica {c_id}...")
+    adjetivos = ["luminoso", "amplio", "renovado", "moderno", "clásico", "con vistas"]
+    amenities = ["balcón al frente", "cochera doble", "piscina compartida", "terraza privada", "seguridad 24hs", "jardín amplio"]
+    target = ["estudiantes", "familias numerosas", "parejas jóvenes", "inversores", "uso profesional"]
+
+    for a_id in agencias_ids:
+        dao = InmoCoreDAO(agencia_id=a_id)
+        print(f"Generando datos para agencia {a_id}...")
         
-        # Crear bucket en MinIO
-        bucket_name = f"genomic-data-{c_id.lower()}"
+        bucket_name = f"proptech-data-{a_id.lower()}"
         storage.asegurar_bucket(bucket_name)
         
-        num_pacientes = 5
-        tipos_muestra = ["Sangre", "Saliva", "Tejido Tumoral", "Hisopado Nasofaríngeo"]
-        tipos_analisis = ["Secuenciación WGS", "PCR Multiplex", "Panel Genético Oncológico"]
+        num_props = 5
+        tipos = ["Casa", "Departamento", "PH", "Terreno"]
         
-        for _ in range(num_pacientes):
-            # Crear Paciente con ubicacion aleatoria cercana a la clinica
-            lon = -67.49 + random.uniform(-0.05, 0.05)
-            lat = -29.16 + random.uniform(-0.05, 0.05)
-            fecha_nac = fake.date_of_birth(minimum_age=18, maximum_age=90)
+        for _ in range(num_props):
+            # Coordenadas aleatorias cercanas a la agencia
+            lon = -58.42 + random.uniform(-0.02, 0.02)
+            lat = -34.58 + random.uniform(-0.02, 0.02)
             
-            # Generar un historial médico rico en texto para ChromaDB
-            historial = f"Paciente presenta {random.choice(sintomas)} desde hace {random.randint(1,6)} meses. " \
-                        f"Además, reporta {random.choice(sintomas)} intermitente. " \
-                        f"Observaciones adicionales: {fake.sentence()}"
-                        
-            paciente = Paciente(
-                clinica_id=c_id,
+            tipo = random.choice(tipos)
+            operacion = random.choice(["Venta", "Alquiler"])
+            
+            # Generar alerta aleatoria bajando mucho el precio
+            es_ganga = random.random() > 0.8
+            if operacion == "Venta":
+                precio = random.uniform(5000, 9500) if es_ganga else random.uniform(80000, 500000)
+            else:
+                precio = random.uniform(200, 2000)
+                
+            desc = f"{tipo} {random.choice(adjetivos)} con {random.choice(amenities)}. Ideal para {random.choice(target)}. Excelente ubicación cerca de transportes."
+            
+            prop = Propiedad(
+                agencia_id=a_id,
+                titulo=f"{tipo} en {fake.street_name()}",
+                descripcion=desc,
+                tipo=tipo,
+                operacion=operacion,
+                precio_usd=round(precio, 2),
+                superficie_m2=round(random.uniform(30.0, 300.0), 2),
+                habitaciones=random.randint(1, 5),
+                ubicacion={"type": "Point", "coordinates": [lon, lat]}
+            )
+            p_id = dao.insertar_propiedad(prop)
+            
+            # Indexar descripción en ChromaDB
+            vector_dao.indexar_descripcion(p_id, desc)
+            
+            # Subir fotos dummy a MinIO
+            file_name = f"{p_id}_foto1.jpg"
+            dummy_content = b"\xFF\xD8\xFF\xE0\x00\x10JFIF" # Fake JPEG header
+            storage.subir_archivo_bytes(bucket_name, file_name, dummy_content)
+            
+            # Cliente
+            cliente = Cliente(
+                agencia_id=a_id,
                 dni=str(fake.random_int(min=10000000, max=99999999)),
                 nombre=fake.first_name(),
                 apellido=fake.last_name(),
-                fecha_nacimiento=datetime(fecha_nac.year, fecha_nac.month, fecha_nac.day),
-                genero=random.choice(["M", "F", "X"]),
-                ubicacion={"type": "Point", "coordinates": [lon, lat]},
-                historial_medico=historial
+                telefono=fake.phone_number(),
+                email=fake.email()
             )
-            p_id = dao.insertar_paciente(paciente)
+            c_id = dao.insertar_cliente(cliente)
             
-            # Indexar en ChromaDB (Vector Search)
-            vector_dao.indexar_historial(p_id, historial)
-            
-            # Crear muestras
-            for _ in range(random.randint(1, 3)):
-                dias_atras = random.randint(1, 365)
-                fecha_ext = datetime.utcnow() - timedelta(days=dias_atras)
-                
-                # Ocasionalmente forzar una temperatura mala para disparar alerta
-                mala_temp = random.random() > 0.8
-                temp = random.uniform(10.0, 30.0) if mala_temp else random.uniform(-80.0, 4.0)
-                
-                muestra = Muestra(
-                    clinica_id=c_id,
-                    paciente_id=p_id,
-                    tipo_muestra=random.choice(tipos_muestra),
-                    fecha_extraccion=fecha_ext,
-                    medico_solicitante=f"Dr. {fake.last_name()}",
-                    estado="Analizada",
-                    temperatura_almacenamiento=temp
-                )
-                m_id = dao.insertar_muestra(muestra)
-                
-                # Crear análisis y archivo dummy en MinIO
-                analisis = Analisis(
-                    clinica_id=c_id,
-                    muestra_id=m_id,
-                    tipo_analisis=random.choice(tipos_analisis),
-                    fecha_analisis=fecha_ext + timedelta(days=random.randint(1, 10)),
-                    laboratorio_origen="Lab Central",
-                    investigador_responsable=fake.name(),
-                    metricas_calidad={"q_score": round(random.uniform(20.0, 40.0), 2)}
-                )
-                
-                # Subir archivo dummy a MinIO
-                file_name = f"{m_id}_{analisis.tipo_analisis.replace(' ', '_')}.fastq"
-                dummy_content = f"@SEQ_ID\n{fake.password(length=100, special_chars=False).upper()}\n+\n!''*((((***+))%%%++)(%%%%).1***-+*''))**55CCF>>>>>>CCCCCCC65\n".encode('utf-8')
-                storage.subir_archivo_bytes(bucket_name, file_name, dummy_content)
-                analisis.resultados_crudos_path = f"{bucket_name}/{file_name}"
-                
-                dao.insertar_analisis(analisis)
+            # Contrato
+            contrato = Contrato(
+                agencia_id=a_id,
+                propiedad_id=p_id,
+                cliente_id=c_id,
+                tipo_contrato=operacion,
+                monto_total=prop.precio_usd,
+                fecha_inicio=datetime.utcnow() - timedelta(days=random.randint(1, 30))
+            )
+            dao.insertar_contrato(contrato)
 
     admin_dao.cerrar_conexion()
-    print("Datos (MongoDB), Archivos Físicos (MinIO) e Índices Vectoriales (ChromaDB) generados exitosamente.")
+    print("Datos (MongoDB), Fotos (MinIO) y Búsqueda Semántica (ChromaDB) generados exitosamente.")
 
 if __name__ == "__main__":
     generar_datos_prueba()
