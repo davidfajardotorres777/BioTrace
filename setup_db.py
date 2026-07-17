@@ -10,12 +10,14 @@ def setup_database():
     print("Configurando colección 'clinicas'...")
     clinicas = db['clinicas']
     clinicas.create_index([("nombre", ASCENDING)], unique=True)
+    clinicas.create_index([("ubicacion", "2dsphere")])
     
     print("Configurando colección 'pacientes'...")
     pacientes = db['pacientes']
     # El dni es unico por clinica
     pacientes.create_index([("clinica_id", ASCENDING), ("dni", ASCENDING)], unique=True)
     pacientes.create_index([("clinica_id", ASCENDING), ("apellido", ASCENDING)])
+    pacientes.create_index([("ubicacion", "2dsphere")])
     
     print("Configurando colección 'muestras'...")
     muestras = db['muestras']
