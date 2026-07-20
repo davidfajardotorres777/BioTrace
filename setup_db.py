@@ -1,3 +1,11 @@
+"""
+Inicializa la base de datos de InmoCore: crea las colecciones
+operativas y los índices necesarios para garantizar unicidad
+(por ejemplo, DNI único por agencia) y para habilitar las
+búsquedas geoespaciales y de alertas activas.
+Se ejecuta una sola vez, antes de correr `seed.py`.
+"""
+
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from config_vars import MONGO_URI, DB_NAME
 

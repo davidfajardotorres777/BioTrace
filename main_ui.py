@@ -1,7 +1,16 @@
+"""
+Interfaz gráfica de escritorio de InmoCore, construida con customtkinter.
+Permite elegir la agencia (tenant) con la que se va a operar y expone
+las características avanzadas del sistema: alertas automáticas,
+publicación de propiedades, búsqueda semántica (ChromaDB) y búsqueda
+geoespacial (`$nearSphere`).
+"""
+
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
 from dao import AdminDAO, InmoCoreDAO, VectorDAO
+from db_models import Propiedad
 
 # Premium styling
 ctk.set_appearance_mode("Dark")
@@ -86,15 +95,88 @@ class InmoCoreApp(ctk.CTk):
         self.tabview = ctk.CTkTabview(self.main_frame, width=800, height=600)
         self.tabview.pack(fill="both", expand=True)
         
+        self.tabview.add("Publicar Propiedad")
         self.tabview.add("Alertas de Precios")
         self.tabview.add("Buscador Semántico (IA)")
         self.tabview.add("Mapa Inmobiliario (Geo)")
         
+        self.construir_tab_publicar(self.tabview.tab("Publicar Propiedad"))
         self.construir_tab_alertas(self.tabview.tab("Alertas de Precios"))
         self.construir_tab_semantico(self.tabview.tab("Buscador Semántico (IA)"))
         self.construir_tab_geo(self.tabview.tab("Mapa Inmobiliario (Geo)"))
         
         ctk.CTkButton(self.sidebar_frame, text="Cerrar Sesión", fg_color="#e74c3c", hover_color="#c0392b", command=self.mostrar_login).grid(row=6, column=0, padx=20, pady=20, sticky="ew")
+
+    def construir_tab_publicar(self, tab):
+        ctk.CTkLabel(tab, text="Publicar Nueva Propiedad", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=10)
+
+        form = ctk.CTkScrollableFrame(tab, width=700, height=430)
+        form.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.entry_pub_titulo = ctk.CTkEntry(form, placeholder_text="Título (Ej: Casa en Av. Libertador)", width=500, height=35)
+        self.entry_pub_titulo.pack(pady=5)
+
+        self.entry_pub_desc = ctk.CTkTextbox(form, width=500, height=80)
+        self.entry_pub_desc.pack(pady=5)
+
+        fila_tipo = ctk.CTkFrame(form, fg_color="transparent")
+        fila_tipo.pack(pady=5)
+        self.combo_pub_tipo = ctk.CTkComboBox(fila_tipo, values=["Casa", "Departamento", "PH", "Terreno"], width=230)
+        self.combo_pub_tipo.pack(side="left", padx=5)
+        self.combo_pub_operacion = ctk.CTkComboBox(fila_tipo, values=["Venta", "Alquiler"], width=230)
+        self.combo_pub_operacion.pack(side="left", padx=5)
+
+        fila_num = ctk.CTkFrame(form, fg_color="transparent")
+        fila_num.pack(pady=5)
+        self.entry_pub_precio = ctk.CTkEntry(fila_num, placeholder_text="Precio USD", width=150)
+        self.entry_pub_precio.pack(side="left", padx=5)
+        self.entry_pub_sup = ctk.CTkEntry(fila_num, placeholder_text="Superficie m2", width=150)
+        self.entry_pub_sup.pack(side="left", padx=5)
+        self.entry_pub_hab = ctk.CTkEntry(fila_num, placeholder_text="Habitaciones", width=150)
+        self.entry_pub_hab.pack(side="left", padx=5)
+
+        fila_geo = ctk.CTkFrame(form, fg_color="transparent")
+        fila_geo.pack(pady=5)
+        self.entry_pub_lat = ctk.CTkEntry(fila_geo, placeholder_text="Latitud", width=230)
+        self.entry_pub_lat.pack(side="left", padx=5)
+        self.entry_pub_lon = ctk.CTkEntry(fila_geo, placeholder_text="Longitud", width=230)
+        self.entry_pub_lon.pack(side="left", padx=5)
+
+        ctk.CTkButton(form, text="Publicar Propiedad", height=40, font=ctk.CTkFont(weight="bold"), command=self.publicar_propiedad).pack(pady=15)
+
+    def publicar_propiedad(self):
+        try:
+            precio = float(self.entry_pub_precio.get())
+            superficie = float(self.entry_pub_sup.get())
+            habitaciones = int(self.entry_pub_hab.get())
+            lat = float(self.entry_pub_lat.get())
+            lon = float(self.entry_pub_lon.get())
+        except ValueError:
+            messagebox.showerror("Error", "Precio, superficie, habitaciones, latitud y longitud deben ser numéricos.")
+            return
+
+        titulo = self.entry_pub_titulo.get().strip()
+        descripcion = self.entry_pub_desc.get("1.0", "end").strip()
+        if not titulo or not descripcion:
+            messagebox.showerror("Error", "Completá el título y la descripción.")
+            return
+
+        propiedad = Propiedad(
+            agencia_id=str(self.agencia_actual["_id"]),
+            titulo=titulo,
+            descripcion=descripcion,
+            tipo=self.combo_pub_tipo.get(),
+            operacion=self.combo_pub_operacion.get(),
+            precio_usd=precio,
+            superficie_m2=superficie,
+            habitaciones=habitaciones,
+            ubicacion={"type": "Point", "coordinates": [lon, lat]}
+        )
+        propiedad_id = self.dao.insertar_propiedad(propiedad)
+        self.vector_dao.indexar_descripcion(propiedad_id, descripcion)
+
+        messagebox.showinfo("Éxito", "Propiedad publicada correctamente.")
+        self.mostrar_dashboard()
 
     def construir_tab_alertas(self, tab):
         ctk.CTkLabel(tab, text="Panel de Alertas (Precios Sospechosos / Descuentos)", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=10)
@@ -110,8 +192,16 @@ class InmoCoreApp(ctk.CTk):
                 frame = ctk.CTkFrame(scroll, corner_radius=10, fg_color="#2c3e50")
                 frame.pack(fill="x", pady=5, padx=5)
                 ctk.CTkLabel(frame, text=f"⚠ {a.tipo_alerta}", font=ctk.CTkFont(weight="bold", size=16), text_color="#f39c12").pack(anchor="w", padx=10, pady=(10, 0))
-                ctk.CTkLabel(frame, text=a.mensaje, font=ctk.CTkFont(size=14)).pack(anchor="w", padx=10, pady=(5, 10))
-                
+                ctk.CTkLabel(frame, text=a.mensaje, font=ctk.CTkFont(size=14)).pack(anchor="w", padx=10, pady=(5, 0))
+                ctk.CTkButton(
+                    frame, text="Marcar como resuelta", fg_color="#27ae60", hover_color="#1e8449",
+                    height=28, command=lambda alerta_id=a.id: self.resolver_alerta(alerta_id)
+                ).pack(anchor="w", padx=10, pady=(5, 10))
+
+    def resolver_alerta(self, alerta_id):
+        self.dao.resolver_alerta(alerta_id)
+        self.mostrar_dashboard()
+
     def construir_tab_semantico(self, tab):
         ctk.CTkLabel(tab, text="Buscador de Propiedades (ChromaDB Vector Search)", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=10)
         

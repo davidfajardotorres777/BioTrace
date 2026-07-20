@@ -1,3 +1,12 @@
+"""
+Script de carga de datos de prueba para InmoCore.
+Limpia las colecciones operativas y genera, para dos agencias de
+ejemplo en Palermo (CABA): propiedades con descripciones realistas
+(indexadas en ChromaDB), fotos simuladas en MinIO, clientes y
+contratos. Una fracción de las propiedades en venta se publica con
+precio anómalo a propósito, para poblar el panel de alertas.
+"""
+
 from faker import Faker
 import random
 from datetime import datetime, timedelta
